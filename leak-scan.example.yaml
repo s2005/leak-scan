@@ -1,0 +1,230 @@
+# leak-scan example configuration (schema version 1)
+#
+# This file is committed and documents every schema key. It MUST NOT contain
+# any real personal name, employer, handle, host or path literal - only
+# obvious dummy placeholders. Copy it to an untracked "leak-scan.yaml" (see
+# .gitignore) and replace every placeholder with your own real values; that
+# working copy necessarily contains the literals being hunted for, so it
+# must never be committed.
+#
+# Schema (version 1):
+#
+#   version (int, required)
+#       Must equal 1.
+#
+#   categories (list, required, non-empty)
+#       Each category is a mapping with:
+#         name (str, required, unique)          - category identifier.
+#         description (str, optional, default "")
+#         rules (list, required, non-empty)     - each rule is a mapping with:
+#             label (str, required)             - human text printed with a hit.
+#             pattern (str, required)            - a regular expression.
+#             ignore_case (bool, optional, default true)
+#         allow (mapping, optional)              - suppression rules, all keys optional:
+#             context (list of str, default [])
+#                 A hit is suppressed when its match span falls inside a
+#                 match of one of these regexes on the same line.
+#             values (list of str, default [])
+#                 Compared case-insensitively against the rule match's named
+#                 group "value", after stripping surrounding whitespace and
+#                 the characters " ' `.
+#             value_patterns (list of str, default [])
+#                 re.match against that same stripped value.
+#             min_value_length (int, default 0)
+#                 A stripped value shorter than this is suppressed.
+#             require_letter_and_digit (bool, default false)
+#                 When true, a stripped value that lacks either a letter or
+#                 a digit is suppressed.
+#         Value-based allow keys (values, value_patterns, min_value_length,
+#         require_letter_and_digit) apply only to rules whose pattern defines
+#         a named group "value"; for rules without it they are inert.
+#
+#   path_allow (list of str, optional, default [])
+#       A tracked file whose relative path matches any of these regexes is
+#       skipped entirely - never read at all.
+#
+#   binary_suffixes (list of str, optional)
+#       File suffixes (e.g. ".png") that are never read. Defaults to the
+#       set documented below if omitted.
+
+version: 1
+
+categories:
+  # -- Author identity -------------------------------------------------------
+  # Replace every placeholder pattern below with your real handle, given
+  # name, surname (and any misspelled/variant forms) and personal email
+  # address in your untracked leak-scan.yaml.
+  - name: identity
+    description: "Author identity markers: handle, name, personal address."
+    rules:
+      - label: "author handle"
+        pattern: "example-handle"
+      - label: "author given name"
+        pattern: "example-given-name"
+      - label: "author surname"
+        pattern: "example-surname"
+      - label: "personal address"
+        pattern: "example\\.personal@example\\.com"
+
+  # -- Employer affiliation ---------------------------------------------------
+  # Replace every placeholder pattern below with your real employer name(s),
+  # internal project prefixes, and internal Jira tenant host in your
+  # untracked leak-scan.yaml.
+  - name: employer
+    description: "Employer name and internal project/host references."
+    rules:
+      - label: "employer name"
+        pattern: "\\bexample-corp\\b"
+      - label: "employer name"
+        pattern: "example\\s+parent\\s+co"
+      - label: "internal jira project"
+        pattern: "exampleproj"
+      - label: "internal project name"
+        pattern: "example-ci-pipeline"
+      - label: "internal jira host"
+        pattern: "internal\\.example\\.com"
+
+  # -- Corporate-context wording -----------------------------------------------
+  # Generic phrasing that only makes sense inside a corporate document. It
+  # names no specific employer, so no placeholder replacement is required -
+  # ported as-is.
+  - name: affiliation
+    description: "Corporate-context wording that should not appear in a public repo."
+    rules:
+      - label: "corporate-context wording"
+        pattern: "internal tooling"
+      - label: "corporate-context wording"
+        pattern: "organi[sz]ation'?s policy"
+
+  # -- Author's machine ---------------------------------------------------------
+  # Generic path *forms* that name no real machine - ported as-is, no
+  # placeholder replacement needed.
+  - name: machine
+    description: "Drive-rooted local paths and unix home directories."
+    rules:
+      - label: "drive-rooted local path"
+        pattern: "[A-Za-z]:[\\\\/](Users|Work|mcp)\\b"
+      - label: "unix home directory path"
+        pattern: "/home/[A-Za-z0-9_.-]+/"
+    allow:
+      # A generic path *form* that documents cross-platform behavior names no
+      # machine and must not be flagged - a scanner that cries wolf on these
+      # trains its operator to ignore it.
+      context:
+        - "/mnt/[a-z]/"
+        - "/home/(?:user|youruser|runner|me|<[^>]+>)/"
+
+  # -- Dangling references to a deleted task tree --------------------------------
+  - name: docs_tasks
+    description: "Any surviving reference to an untracked task tree."
+    rules:
+      - label: "reference to deleted tree"
+        pattern: "docs/tasks"
+
+  # -- Credentials ------------------------------------------------------------
+  - name: credential
+    description: "password / token / secret / api_key assignments whose value is not a placeholder."
+    rules:
+      - label: "credential assignment"
+        pattern: "(?:password|passwd|pwd|token|secret|api[_-]?key)\\s*[:=]\\s*(?P<value>[\\\"'`]?[^\\s\\\"'`,;()]+[\\\"'`]?)"
+    allow:
+      # Placeholder credential values that are not real secrets. The one
+      # real, deliberately-published value in the original prototype (an
+      # ephemeral test-container password) is intentionally NOT ported here;
+      # add your own deliberate, documented exceptions to your untracked
+      # leak-scan.yaml if you have one.
+      values:
+        - "change_me"
+        - "changeme"
+        - "your_password"
+        - "your-password"
+        - "password"
+        - "secret"
+        - "token"
+        - "none"
+        - "null"
+        - "true"
+        - "false"
+        - ""
+      value_patterns:
+        - "^\\$\\{.*\\}$"  # ${VAR} interpolation
+        - "^\\$[A-Za-z_][A-Za-z0-9_]*$"  # $VAR
+        - "^%[A-Za-z_][A-Za-z0-9_]*%$"  # %VAR%
+        - "^<.*>$"  # <placeholder>
+        - "^[A-Za-z_][A-Za-z0-9_.]*$"  # bare identifier / var reference
+        - "^\\{\\{.*\\}\\}$"  # {{ template }}
+        - "^\\*+$"  # masked
+      min_value_length: 6
+      require_letter_and_digit: true
+
+  # -- Recognizable API keys and access tokens -------------------------------
+  # These rules detect providers whose credentials have a documented prefix.
+  # The value group is used by the value-based allow rules in the working
+  # configuration, while the length and boundary checks reduce false hits.
+  - name: api_key_prefix
+    description: "Recognizable API key and access-token prefixes."
+    rules:
+      - label: "GitHub token"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])(?:ghp_|github_pat_|gho_|ghu_|ghs_|ghr_)[A-Za-z0-9_]{16,})(?![A-Za-z0-9_])"
+        ignore_case: false
+      - label: "GitLab token"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])(?:glpat-|gloas-|gldt-|glrt-|glrtr-|glcbt-|glptt-|glft-|glimt-|glagent-|glwt-|glsoat-|glffct-)[A-Za-z0-9_-]{16,})(?![A-Za-z0-9_-])"
+        ignore_case: false
+      - label: "AWS access key ID"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])(?:AKIA|ASIA)[A-Z0-9]{16})(?![A-Z0-9])"
+        ignore_case: false
+      - label: "Stripe secret or restricted key"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])(?:sk_(?:test|live|org)_|rk_(?:test|live)_)[A-Za-z0-9_]{12,})(?![A-Za-z0-9_])"
+        ignore_case: false
+      - label: "Slack token"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])(?:xox[bapr]-|xoxe[.-])[A-Za-z0-9_.-]{12,})(?![A-Za-z0-9_.-])"
+        ignore_case: false
+      - label: "OpenAI API key"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])(?:sk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}|sk-(?!ant-)[A-Za-z0-9]{20,}))(?![A-Za-z0-9_-])"
+        ignore_case: false
+      - label: "Anthropic API key"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])sk-ant-(?:api03|admin01)-[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])"
+        ignore_case: false
+      - label: "Groq API key"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])gsk_[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])"
+        ignore_case: false
+      - label: "Hugging Face token"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])(?:hf_|api_org_)[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])"
+        ignore_case: false
+      - label: "Perplexity API key"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])pplx-[A-Za-z0-9]{20,})(?![A-Za-z0-9])"
+        ignore_case: false
+      - label: "DigitalOcean token"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])(?:dop_v1_|doo_v1_|dor_v1_)[A-Za-z0-9_-]{16,})(?![A-Za-z0-9_-])"
+        ignore_case: false
+      - label: "Databricks token"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])dapi[a-f0-9]{32}(?:-[0-9])?)(?![A-Za-z0-9])"
+        ignore_case: false
+      - label: "npm token"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])npm_[A-Za-z0-9]{20,})(?![A-Za-z0-9])"
+        ignore_case: false
+      - label: "PyPI token"
+        pattern: "(?P<value>(?<![A-Za-z0-9_])pypi-[A-Za-z0-9_-]{20,})(?![A-Za-z0-9_-])"
+        ignore_case: false
+
+# Paths whose content is expected to carry scanner-tripping text for a
+# legitimate reason. Empty by design: every exemption here is a hole, so a
+# hit is fixed at the source instead of exempted here.
+path_allow: []
+
+# Files with these suffixes are never read.
+binary_suffixes:
+  - ".png"
+  - ".jpg"
+  - ".jpeg"
+  - ".gif"
+  - ".ico"
+  - ".pdf"
+  - ".zip"
+  - ".gz"
+  - ".jar"
+  - ".xlsx"
+  - ".class"
+  - ".so"
+  - ".dll"
+  - ".exe"
