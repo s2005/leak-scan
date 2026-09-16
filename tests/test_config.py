@@ -273,6 +273,45 @@ def test_same_key_in_two_merge_sources_loads(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_repeated_merge_key_raises(tmp_path: Path) -> None:
+    path = tmp_path / "leak-scan.yaml"
+    path.write_text(
+        "version: 1\n"
+        "categories:\n"
+        "  - name: widget\n"
+        "    rules:\n"
+        "      - label: widget-token\n"
+        "        pattern: 'widget-[0-9]+'\n"
+        "    allow:\n"
+        "      <<: {values: ['placeholder-first']}\n"
+        "      <<: {values: ['placeholder-second']}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=r"duplicate key ['\"]<<['\"]"):
+        load_config(path)
+
+
+@pytest.mark.unit
+def test_quoted_merge_key_is_an_ordinary_key(tmp_path: Path) -> None:
+    path = tmp_path / "leak-scan.yaml"
+    path.write_text(
+        "version: 1\n"
+        "categories:\n"
+        "  - name: widget\n"
+        "    rules:\n"
+        "      - label: widget-token\n"
+        "        pattern: 'widget-[0-9]+'\n"
+        "    allow:\n"
+        "      <<: {values: ['placeholder-first']}\n"
+        "      '<<': {values: ['placeholder-second']}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match="unknown key") as excinfo:
+        load_config(path)
+    assert "duplicate" not in str(excinfo.value)
+
+
+@pytest.mark.unit
 def test_invalid_json_raises(tmp_path: Path) -> None:
     path = tmp_path / "leak-scan.json"
     path.write_text("{not json", encoding="utf-8")

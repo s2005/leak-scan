@@ -87,11 +87,16 @@ class _UniqueKeyLoader(yaml.SafeLoader):
         self._checked_nodes.add(node)
 
         seen: set[Hashable] = set()
+        merged = False
         for key_node, value_node in node.value:
             if key_node.tag == _MERGE_TAG:
                 # Merged keys are not counted here, so an explicit key may override
                 # one. The merge source itself is checked separately: super() splices
-                # its pairs into this node and never constructs it as a mapping.
+                # its pairs into this node and never constructs it as a mapping. A
+                # second plain "<<" in the same mapping is itself a duplicate key.
+                if merged:
+                    raise self._duplicate_key_error(node, key_node, "'<<'")
+                merged = True
                 self._check_merge_source(value_node, deep=deep)
                 continue
             key = self.construct_object(key_node, deep=deep)
@@ -100,13 +105,19 @@ class _UniqueKeyLoader(yaml.SafeLoader):
             if not isinstance(key, Hashable):
                 continue
             if key in seen:
-                raise yaml.constructor.ConstructorError(
-                    "while constructing a mapping",
-                    node.start_mark,
-                    f"duplicate key {key!r}",
-                    key_node.start_mark,
-                )
+                raise self._duplicate_key_error(node, key_node, repr(key))
             seen.add(key)
+
+    @staticmethod
+    def _duplicate_key_error(
+        node: yaml.nodes.MappingNode, key_node: yaml.nodes.Node, key_repr: str
+    ) -> yaml.constructor.ConstructorError:
+        return yaml.constructor.ConstructorError(
+            "while constructing a mapping",
+            node.start_mark,
+            f"duplicate key {key_repr}",
+            key_node.start_mark,
+        )
 
     def _check_merge_source(self, node: yaml.nodes.Node, *, deep: bool) -> None:
         # A merge value that is not a mapping or a sequence of mappings is left for
