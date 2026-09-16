@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Hashable
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,38 @@ class ConfigError(ValueError):
     """Raised when a scanner configuration is missing, malformed, or invalid."""
 
 
+_MERGE_TAG = "tag:yaml.org,2002:merge"
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate mapping keys."""
+
+    def construct_mapping(
+        self, node: yaml.nodes.MappingNode, deep: bool = False
+    ) -> dict[Hashable, Any]:
+        if isinstance(node, yaml.nodes.MappingNode):
+            seen: set[Hashable] = set()
+            for key_node, _value_node in node.value:
+                # Keys brought in through a merge are flattened by super() below and
+                # must not be counted here, so an explicit key may override one.
+                if key_node.tag == _MERGE_TAG:
+                    continue
+                key = self.construct_object(key_node, deep=deep)
+                # Unhashable keys are left for the parent, which raises the
+                # proper YAML "unhashable key" error instead of a raw TypeError.
+                if not isinstance(key, Hashable):
+                    continue
+                if key in seen:
+                    raise yaml.constructor.ConstructorError(
+                        "while constructing a mapping",
+                        node.start_mark,
+                        f"duplicate key {key!r}",
+                        key_node.start_mark,
+                    )
+                seen.add(key)
+        return super().construct_mapping(node, deep=deep)
+
+
 def find_config(*directories: Path) -> Path | None:
     """Return the first default-named config file found among directories.
 
@@ -87,7 +120,7 @@ def load_config(path: Path) -> ScanConfig:
             raise ConfigError(f"invalid JSON in {path}: {exc}") from exc
     elif suffix in (".yaml", ".yml"):
         try:
-            data = yaml.safe_load(text)
+            data = yaml.load(text, Loader=_UniqueKeyLoader)
         except yaml.YAMLError as exc:
             raise ConfigError(f"invalid YAML in {path}: {exc}") from exc
     else:
