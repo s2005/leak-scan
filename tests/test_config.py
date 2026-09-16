@@ -192,6 +192,87 @@ def test_yaml_explicit_key_overrides_merged_key(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
+def test_duplicate_key_in_inline_merge_source_raises(tmp_path: Path) -> None:
+    path = tmp_path / "leak-scan.yaml"
+    path.write_text(
+        "version: 1\n"
+        "categories:\n"
+        "  - name: widget\n"
+        "    rules:\n"
+        "      - label: widget-token\n"
+        "        pattern: 'widget-[0-9]+'\n"
+        "    allow:\n"
+        "      <<: {values: ['placeholder-first'], values: ['placeholder-second']}\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=r"duplicate key ['\"]values['\"]"):
+        load_config(path)
+
+
+@pytest.mark.unit
+def test_duplicate_key_in_merge_source_sequence_raises(tmp_path: Path) -> None:
+    path = tmp_path / "leak-scan.yaml"
+    path.write_text(
+        "version: 1\n"
+        "categories:\n"
+        "  - name: widget\n"
+        "    rules:\n"
+        "      - label: widget-token\n"
+        "        pattern: 'widget-[0-9]+'\n"
+        "    allow:\n"
+        "      <<: [{values: ['placeholder-first'], values: ['placeholder-second']}]\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ConfigError, match=r"duplicate key ['\"]values['\"]"):
+        load_config(path)
+
+
+@pytest.mark.unit
+def test_yaml_override_of_nested_merge_key_on_reused_anchor_loads(tmp_path: Path) -> None:
+    path = tmp_path / "leak-scan.yaml"
+    path.write_text(
+        "version: 1\n"
+        "categories:\n"
+        "  - name: widget\n"
+        "    rules:\n"
+        "      - label: widget-token\n"
+        "        pattern: 'widget-[0-9]+'\n"
+        "    allow: &shared_allow\n"
+        "      <<: {values: ['placeholder-base']}\n"
+        "      values: ['placeholder-widget']\n"
+        "  - name: gadget\n"
+        "    rules:\n"
+        "      - label: gadget-token\n"
+        "        pattern: 'gadget-[0-9]+'\n"
+        "    allow:\n"
+        "      <<: *shared_allow\n",
+        encoding="utf-8",
+    )
+    config = load_config(path)
+    gadget = next(category for category in config.categories if category.name == "gadget")
+    assert set(gadget.allow.values) == {"placeholder-widget"}
+
+
+@pytest.mark.unit
+def test_same_key_in_two_merge_sources_loads(tmp_path: Path) -> None:
+    path = tmp_path / "leak-scan.yaml"
+    path.write_text(
+        "version: 1\n"
+        "categories:\n"
+        "  - name: widget\n"
+        "    rules:\n"
+        "      - label: widget-token\n"
+        "        pattern: 'widget-[0-9]+'\n"
+        "    allow:\n"
+        "      <<: [{values: ['placeholder-first']}, {values: ['placeholder-second']}]\n",
+        encoding="utf-8",
+    )
+    config = load_config(path)
+    widget = next(category for category in config.categories if category.name == "widget")
+    assert set(widget.allow.values) == {"placeholder-first"}
+
+
+@pytest.mark.unit
 def test_invalid_json_raises(tmp_path: Path) -> None:
     path = tmp_path / "leak-scan.json"
     path.write_text("{not json", encoding="utf-8")
