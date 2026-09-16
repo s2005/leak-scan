@@ -10,12 +10,16 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Hashable
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from leak_scan.models import AllowRules, Category, Rule, ScanConfig
+
+if TYPE_CHECKING:
+    from _typeshed import SupportsRead
 
 CONFIG_VERSION = 1
 
@@ -56,6 +60,74 @@ class ConfigError(ValueError):
     """Raised when a scanner configuration is missing, malformed, or invalid."""
 
 
+_MERGE_TAG = "tag:yaml.org,2002:merge"
+
+
+class _UniqueKeyLoader(yaml.SafeLoader):
+    """Safe YAML loader that rejects duplicate mapping keys, merge sources included."""
+
+    def __init__(self, stream: str | bytes | SupportsRead[str] | SupportsRead[bytes]) -> None:
+        super().__init__(stream)
+        # Mapping nodes whose keys have already been checked.
+        self._checked_nodes: set[yaml.nodes.Node] = set()
+
+    def construct_mapping(
+        self, node: yaml.nodes.MappingNode, deep: bool = False
+    ) -> dict[Hashable, Any]:
+        if isinstance(node, yaml.nodes.MappingNode):
+            self._check_unique_keys(node, deep=deep)
+        return super().construct_mapping(node, deep=deep)
+
+    def _check_unique_keys(self, node: yaml.nodes.MappingNode, *, deep: bool) -> None:
+        # flatten_mapping() rewrites node.value in place, splicing merged pairs in
+        # beside the explicit keys, so a node is checked once, before that happens;
+        # a second check would read a merged key and its override as a duplicate.
+        if node in self._checked_nodes:
+            return
+        self._checked_nodes.add(node)
+
+        seen: set[Hashable] = set()
+        merged = False
+        for key_node, value_node in node.value:
+            if key_node.tag == _MERGE_TAG:
+                # Merged keys are not counted here, so an explicit key may override
+                # one. The merge source itself is checked separately: super() splices
+                # its pairs into this node and never constructs it as a mapping. A
+                # second plain "<<" in the same mapping is itself a duplicate key.
+                if merged:
+                    raise self._duplicate_key_error(node, key_node, "'<<'")
+                merged = True
+                self._check_merge_source(value_node, deep=deep)
+                continue
+            key = self.construct_object(key_node, deep=deep)
+            # Unhashable keys are left for the parent, which raises the
+            # proper YAML "unhashable key" error instead of a raw TypeError.
+            if not isinstance(key, Hashable):
+                continue
+            if key in seen:
+                raise self._duplicate_key_error(node, key_node, repr(key))
+            seen.add(key)
+
+    @staticmethod
+    def _duplicate_key_error(
+        node: yaml.nodes.MappingNode, key_node: yaml.nodes.Node, key_repr: str
+    ) -> yaml.constructor.ConstructorError:
+        return yaml.constructor.ConstructorError(
+            "while constructing a mapping",
+            node.start_mark,
+            f"duplicate key {key_repr}",
+            key_node.start_mark,
+        )
+
+    def _check_merge_source(self, node: yaml.nodes.Node, *, deep: bool) -> None:
+        # A merge value that is not a mapping or a sequence of mappings is left for
+        # super(), which raises PyYAML's own error for it.
+        items = node.value if isinstance(node, yaml.nodes.SequenceNode) else [node]
+        for item in items:
+            if isinstance(item, yaml.nodes.MappingNode):
+                self._check_unique_keys(item, deep=deep)
+
+
 def find_config(*directories: Path) -> Path | None:
     """Return the first default-named config file found among directories.
 
@@ -87,7 +159,7 @@ def load_config(path: Path) -> ScanConfig:
             raise ConfigError(f"invalid JSON in {path}: {exc}") from exc
     elif suffix in (".yaml", ".yml"):
         try:
-            data = yaml.safe_load(text)
+            data = yaml.load(text, Loader=_UniqueKeyLoader)
         except yaml.YAMLError as exc:
             raise ConfigError(f"invalid YAML in {path}: {exc}") from exc
     else:
