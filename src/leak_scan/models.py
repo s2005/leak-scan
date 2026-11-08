@@ -11,7 +11,8 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-type SkipReason = Literal["path_allow", "binary_suffix", "null_byte"]
+type SkipReason = Literal["path_allow", "binary_suffix", "null_byte", "symlink", "special_file"]
+type Source = Literal["repo", "dir"]
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,26 @@ class ScanConfig:
 
 
 @dataclass(frozen=True)
+class Selection:
+    """Which candidate files a scan is restricted to.
+
+    ``folders`` holds normalised ``/``-separated prefixes relative to the scan
+    root (the empty string means the whole root). ``includes`` and ``excludes``
+    hold glob patterns. The stages apply in that order: folders, includes,
+    then excludes.
+    """
+
+    folders: tuple[str, ...] = ()
+    includes: tuple[str, ...] = ()
+    excludes: tuple[str, ...] = ()
+
+    @property
+    def active(self) -> bool:
+        """Return True when any folder, include or exclude was given."""
+        return bool(self.folders or self.includes or self.excludes)
+
+
+@dataclass(frozen=True)
 class Hit:
     """A single surviving pattern match."""
 
@@ -86,12 +107,20 @@ class SkippedFile:
 
 @dataclass(frozen=True)
 class ScanResult:
-    """The outcome of scanning a repository."""
+    """The outcome of scanning a repository.
+
+    ``tracked_files`` counts the files selected for scanning (git-tracked or
+    found by the directory walk, after the selection). ``removed_files`` is how
+    many candidates the selection dropped before that count.
+    """
 
     hits: tuple[Hit, ...]
     tracked_files: int
     scanned_files: int
     skips: tuple[SkippedFile, ...]
+    source: Source = "repo"
+    selection: Selection = Selection()
+    removed_files: int = 0
 
     def __post_init__(self) -> None:
         """Reject ambiguous accounting in manually constructed results."""

@@ -6,6 +6,7 @@ import re
 from collections.abc import Sequence
 from pathlib import Path
 
+from leak_scan.files import walk_files
 from leak_scan.gitrepo import tracked_files
 from leak_scan.models import (
     AllowRules,
@@ -14,8 +15,12 @@ from leak_scan.models import (
     Hit,
     ScanConfig,
     ScanResult,
+    Selection,
     SkippedFile,
+    SkipReason,
+    Source,
 )
+from leak_scan.selection import SelectionError, apply_selection
 
 
 class ScanError(RuntimeError):
@@ -110,20 +115,49 @@ def scan_file(repo: Path, relpath: str, config: ScanConfig) -> FileScanResult:
 
 
 def scan_repo(
-    repo: Path, config: ScanConfig, categories: Sequence[str] | None = None
+    repo: Path,
+    config: ScanConfig,
+    categories: Sequence[str] | None = None,
+    *,
+    source: Source = "repo",
+    selection: Selection | None = None,
 ) -> ScanResult:
-    """Scan every git-tracked file in ``repo``.
+    """Scan the files of ``repo`` chosen by ``source`` and ``selection``.
 
-    ``categories``, when given, restricts the returned hits to those category
-    names without changing tracked, scanned, or skipped file accounting.
+    ``source="repo"`` scans the git-tracked files; ``source="dir"`` walks the
+    directory, so it works on a folder that is not a git repository. The
+    selection (folders, then includes, then excludes) drops files before any
+    accounting. ``categories``, when given, restricts the returned hits to those
+    category names without changing tracked, scanned, or skipped file
+    accounting. Raises ``SelectionError`` when an active selection leaves no
+    files.
     """
-    files = tracked_files(repo)
+    selection = selection or Selection()
+    if source == "dir":
+        files, links, special = walk_files(repo)
+    else:
+        files, links, special = tracked_files(repo), [], []
+    candidate_count = len(files) + len(links) + len(special)
+    files = apply_selection(files, selection)
+    links = apply_selection(links, selection)
+    special = apply_selection(special, selection)
+    selected_count = len(files) + len(links) + len(special)
+    if selection.active and selected_count == 0:
+        raise SelectionError("selection matched no files")
+    unscanned: dict[str, SkipReason] = {
+        **dict.fromkeys(links, "symlink"),
+        **dict.fromkeys(special, "special_file"),
+    }
     category_filter = set(categories) if categories else None
 
     hits: list[Hit] = []
     skips: list[SkippedFile] = []
     scanned_count = 0
-    for relpath in sorted(files):
+    for relpath in sorted([*files, *unscanned]):
+        unscanned_reason = unscanned.get(relpath)
+        if unscanned_reason is not None:
+            skips.append(SkippedFile(path=relpath, reason=unscanned_reason))
+            continue
         if any(allow.search(relpath) for allow in config.path_allow):
             skips.append(SkippedFile(path=relpath, reason="path_allow"))
             continue
@@ -139,7 +173,10 @@ def scan_repo(
 
     return ScanResult(
         hits=tuple(hits),
-        tracked_files=len(files),
+        tracked_files=selected_count,
         scanned_files=scanned_count,
         skips=tuple(skips),
+        source=source,
+        selection=selection,
+        removed_files=candidate_count - selected_count,
     )

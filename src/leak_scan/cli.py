@@ -9,14 +9,18 @@ from pathlib import Path
 
 from leak_scan import __version__
 from leak_scan.config import DEFAULT_CONFIG_NAMES, ConfigError, find_config, load_config
-from leak_scan.gitrepo import GitError
+from leak_scan.files import WalkError
+from leak_scan.gitrepo import GitError, NotAGitRepoError
+from leak_scan.models import Source
 from leak_scan.report import render_json, render_text
 from leak_scan.scanner import ScanError, scan_repo
+from leak_scan.selection import SelectionError, build_selection
 
 logger = logging.getLogger(__name__)
 
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
 FORMATS = ["text", "json"]
+MODES = ["repo", "dir"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -34,16 +38,55 @@ def build_parser() -> argparse.ArgumentParser:
         version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
+        "--root",
         "--repo",
+        dest="repo",
+        metavar="PATH",
         required=True,
-        help="Path to the git repository or exported tree to scan. Required.",
+        help="Path to scan: the git repository in --mode repo, a plain folder in "
+        "--mode dir. --repo is an alias. Required.",
     )
     parser.add_argument(
         "--config",
         default=None,
         help="Path to the scanner configuration file. Default: search the current "
-        "working directory then --repo for one of "
+        "working directory then --root for one of "
         f"{', '.join(DEFAULT_CONFIG_NAMES)}.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=MODES,
+        default="repo",
+        help="Where the file list comes from. repo: the files git tracks "
+        "(git ls-files). dir: every file found by walking --root, so a folder that "
+        "is not a git repository can be scanned; never reads .git entries, follows "
+        "symlinks or consults .gitignore. Default: repo.",
+    )
+    parser.add_argument(
+        "--folder",
+        action="append",
+        default=None,
+        metavar="DIR",
+        help="Scan only this directory, relative to --root. Repeatable. "
+        "Default: the whole of --root.",
+    )
+    parser.add_argument(
+        "--include",
+        action="append",
+        default=None,
+        metavar="GLOB",
+        help="Keep only files whose path relative to --root matches this glob; a "
+        "pattern without '/' matches the file name at any depth, '**' spans "
+        "directories, matching is case-sensitive. Repeatable. Applied after --folder "
+        "and before --exclude. Default: keep every file.",
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=None,
+        metavar="GLOB",
+        help="Remove files matching this glob (same syntax as --include) from the "
+        "result of --folder and --include. Repeatable. Default: remove nothing.",
     )
     parser.add_argument(
         "--category",
@@ -98,7 +141,7 @@ def run(args: argparse.Namespace) -> int:
     """
     repo = Path(args.repo).resolve()
     if not repo.is_dir():
-        logger.error("not a directory: %s", repo)
+        logger.error("scan root is not a directory: %s", repo)
         return 2
 
     config_path: Path | None
@@ -133,10 +176,29 @@ def run(args: argparse.Namespace) -> int:
         categories = [args.category]
 
     try:
-        result = scan_repo(repo, config, categories=categories)
-    except (GitError, ScanError) as exc:
+        selection = build_selection(
+            repo,
+            folders=args.folder or [],
+            includes=args.include or [],
+            excludes=args.exclude or [],
+        )
+    except SelectionError as exc:
         logger.error("%s", exc)
         return 2
+
+    source: Source = args.mode
+    try:
+        result = scan_repo(repo, config, categories=categories, source=source, selection=selection)
+    except NotAGitRepoError as exc:
+        logger.error("%s", exc)
+        logger.error("to scan a folder that is not a git repository, use --mode dir")
+        return 2
+    except (GitError, ScanError, WalkError, SelectionError) as exc:
+        logger.error("%s", exc)
+        return 2
+
+    if source == "dir" and not selection.active and result.tracked_files == 0:
+        logger.warning("no files found under %s; nothing was scanned", repo)
 
     if args.format == "json":
         output = render_json(

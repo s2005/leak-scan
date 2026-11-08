@@ -12,6 +12,13 @@ MAX_LINE = 160
 REDACTED = "<redacted>"
 
 
+def _join(values: Sequence[str]) -> str:
+    """Comma-join selection values for display; ``-`` when empty, ``.`` for the root."""
+    if not values:
+        return "-"
+    return ", ".join(value or "." for value in values)
+
+
 def render_text(
     result: ScanResult,
     config: ScanConfig,
@@ -30,11 +37,19 @@ def render_text(
             text = hit.line[:MAX_LINE] if show_matches else REDACTED
             lines.append(f"{hit.path}:{hit.lineno}: [{hit.category}] {hit.label}: {text}")
 
+    noun = "tracked files" if result.source == "repo" else "files"
     lines.append("")
     lines.append(
-        f"Scanned {result.scanned_files} of {result.tracked_files} tracked files in {repo}; "
+        f"Scanned {result.scanned_files} of {result.tracked_files} {noun} in {repo}; "
         f"skipped {result.skipped_files}"
     )
+    if result.selection.active:
+        selection = result.selection
+        lines.append(
+            f"Selection: folders={_join(selection.folders)}; "
+            f"include={_join(selection.includes)}; exclude={_join(selection.excludes)}; "
+            f"removed {result.removed_files} file(s)"
+        )
     lines.append("-" * 60)
 
     counts = result.counts()
@@ -56,6 +71,7 @@ def render_json(result: ScanResult, *, repo: Path, quiet: bool, show_matches: bo
     counts = result.counts()
     payload = {
         "repo": str(repo),
+        "source": result.source,
         "tracked_files": result.tracked_files,
         "scanned_files": result.scanned_files,
         "skipped_files": result.skipped_files,
@@ -63,6 +79,12 @@ def render_json(result: ScanResult, *, repo: Path, quiet: bool, show_matches: bo
             {"path": skip.path, "reason": skip.reason}
             for skip in sorted(result.skips, key=lambda item: (item.path, item.reason))
         ],
+        "selection": {
+            "folders": [folder or "." for folder in result.selection.folders],
+            "include": list(result.selection.includes),
+            "exclude": list(result.selection.excludes),
+            "removed_files": result.removed_files,
+        },
         "total": len(result.hits),
         "counts": {name: counts[name] for name in sorted(counts)},
         "hits": [
