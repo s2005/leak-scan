@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from leak_scan.models import (
     Rule,
     ScanConfig,
     ScanResult,
+    Selection,
     SkippedFile,
 )
 from leak_scan.report import MAX_LINE, REDACTED, render_json, render_text
@@ -223,3 +225,79 @@ def test_render_json_counts_keys_are_sorted() -> None:
     identity_pos = raw.index('"identity"')
     machine_pos = raw.index('"machine"')
     assert identity_pos < machine_pos
+
+
+@pytest.mark.unit
+def test_render_text_files_source_says_files_not_tracked_files() -> None:
+    result = replace(_build_result(), source="files")
+    text = render_text(
+        result,
+        _build_config(),
+        repo=Path("/repo"),
+        quiet=False,
+        show_matches=False,
+        categories=None,
+    )
+    assert "Scanned 3 of 4 files in" in text
+    assert "tracked files" not in text
+
+
+@pytest.mark.unit
+def test_render_text_has_no_selection_line_without_options() -> None:
+    text = render_text(
+        _build_result(),
+        _build_config(),
+        repo=Path("/repo"),
+        quiet=False,
+        show_matches=False,
+        categories=None,
+    )
+    assert "Selection:" not in text
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("quiet", [False, True])
+def test_render_text_selection_line_follows_summary(quiet: bool) -> None:
+    selection = Selection(folders=("src", ""), includes=("*.py",), excludes=())
+    result = replace(_build_result(), selection=selection, removed_files=7)
+    lines = render_text(
+        result,
+        _build_config(),
+        repo=Path("/repo"),
+        quiet=quiet,
+        show_matches=False,
+        categories=None,
+    ).splitlines()
+    summary_index = next(i for i, line in enumerate(lines) if line.startswith("Scanned "))
+    assert lines[summary_index + 1] == (
+        "Selection: folders=src, .; include=*.py; exclude=-; removed 7 file(s)"
+    )
+
+
+@pytest.mark.unit
+def test_render_json_without_selection_has_empty_lists() -> None:
+    payload = json.loads(
+        render_json(_build_result(), repo=Path("/repo"), quiet=False, show_matches=False)
+    )
+    assert payload["source"] == "git"
+    assert payload["selection"] == {
+        "folders": [],
+        "include": [],
+        "exclude": [],
+        "removed_files": 0,
+    }
+
+
+@pytest.mark.unit
+def test_render_json_reports_source_and_selection() -> None:
+    selection = Selection(folders=("src",), includes=("*.py",), excludes=("tests/**",))
+    result = replace(_build_result(), source="files", selection=selection, removed_files=2)
+    payload = json.loads(render_json(result, repo=Path("/repo"), quiet=True, show_matches=False))
+    assert payload["source"] == "files"
+    assert payload["selection"] == {
+        "folders": ["src"],
+        "include": ["*.py"],
+        "exclude": ["tests/**"],
+        "removed_files": 2,
+    }
+    assert payload["tracked_files"] == 4
