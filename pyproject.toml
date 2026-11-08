@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "leak-scan"
-version = "0.0.1"
+version = "0.0.2"
 description = "Scan a git-tracked tree for content that must not be published"
 readme = "README.md"
 license = "MIT"

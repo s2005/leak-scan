@@ -35,8 +35,8 @@ leak-scan --version
 leak-scan --help
 ```
 
-`--version` prints exactly `leak-scan 0.0.1`. The help output includes the
-same `leak-scan 0.0.1` banner. Both commands exit without requiring `--root`
+`--version` prints exactly `leak-scan 0.0.2`. The help output includes the
+same `leak-scan 0.0.2` banner. Both commands exit without requiring `--root`
 or a config file.
 
 It needs a config file. The committed `leak-scan.example.yaml` is sanitised and

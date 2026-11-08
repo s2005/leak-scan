@@ -46,8 +46,8 @@ leak-scan --version
 leak-scan --help
 ```
 
-The version command prints exactly `leak-scan 0.0.1`. Help includes the same
-`leak-scan 0.0.1` version banner. Neither discovery command requires `--root`
+The version command prints exactly `leak-scan 0.0.2`. Help includes the same
+`leak-scan 0.0.2` version banner. Neither discovery command requires `--root`
 or any other scan input.
 
 If you change the source code, reinstall the command so the executable uses the
@@ -190,8 +190,8 @@ binary_suffixes: [".png", ".jpg", ".pdf", ".zip"]
 | `--show-matches` | no | `False` | Print raw matching source lines; use only for intentional local investigation. |
 | `--format` | no | `text` | Output format: `text` or `json`. |
 | `--log-level` | no | `INFO` | One of `DEBUG`, `INFO`, `WARNING`, `ERROR`. |
-| `--version` | no | - | Print `leak-scan 0.0.1` and exit without scan inputs. |
-| `--help` | no | - | Print usage with the `leak-scan 0.0.1` banner and exit without scan inputs. |
+| `--version` | no | - | Print `leak-scan 0.0.2` and exit without scan inputs. |
+| `--help` | no | - | Print usage with the `leak-scan 0.0.2` banner and exit without scan inputs. |
 
 ## Examples
 

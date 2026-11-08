@@ -30,9 +30,9 @@ def test_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(SystemExit) as exc:
         main(["--version"])
     assert exc.value.code == 0
-    assert __version__ == "0.0.1"
+    assert __version__ == "0.0.2"
     captured = capsys.readouterr()
-    assert captured.out == "leak-scan 0.0.1\n"
+    assert captured.out == "leak-scan 0.0.2\n"
     assert captured.err == ""
 
 
@@ -43,7 +43,7 @@ def test_help_lists_every_named_option(capsys: pytest.CaptureFixture[str]) -> No
     assert exc.value.code == 0
     captured = capsys.readouterr()
     help_text = captured.out
-    assert "leak-scan 0.0.1" in help_text
+    assert "leak-scan 0.0.2" in help_text
     assert captured.err == ""
     for option in (
         "--repo",
