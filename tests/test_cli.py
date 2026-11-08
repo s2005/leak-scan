@@ -508,7 +508,7 @@ def test_unreadable_directory_during_walk_exits_2(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def broken_walk(root: Path) -> tuple[list[str], list[str]]:
+    def broken_walk(root: Path) -> tuple[list[str], list[str], list[str]]:
         raise WalkError("cannot list directory 'sub'")
 
     monkeypatch.setattr("leak_scan.scanner.walk_files", broken_walk)

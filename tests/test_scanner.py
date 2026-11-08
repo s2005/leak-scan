@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -324,7 +325,7 @@ def test_scan_repo_records_symlinks_as_skips_without_reading(
 ) -> None:
     monkeypatch.setattr(
         "leak_scan.scanner.walk_files",
-        lambda root: (["clean.txt"], ["link.txt", "linkdir"]),
+        lambda root: (["clean.txt"], ["link.txt", "linkdir"], []),
     )
     result = scan_repo(plain_dir, scan_config, source="dir")
     assert result.tracked_files == 3
@@ -341,7 +342,7 @@ def test_scan_repo_symlinks_go_through_the_selection(
 ) -> None:
     monkeypatch.setattr(
         "leak_scan.scanner.walk_files",
-        lambda root: (["clean.txt"], ["link.txt", "linkdir"]),
+        lambda root: (["clean.txt"], ["link.txt", "linkdir"], []),
     )
     result = scan_repo(
         plain_dir, scan_config, source="dir", selection=Selection(excludes=("link*",))
@@ -367,3 +368,49 @@ def test_scan_repo_files_mode_without_selection_allows_empty_folder(
     result = scan_repo(tmp_path, scan_config, source="dir")
     assert result.tracked_files == 0
     assert result.hits == ()
+
+
+@pytest.mark.unit
+def test_scan_repo_records_special_files_as_skips_without_opening(
+    scan_config: ScanConfig, plain_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "leak_scan.scanner.walk_files",
+        lambda root: (["clean.txt"], ["link.txt"], ["pipe", "sock"]),
+    )
+    result = scan_repo(plain_dir, scan_config, source="dir")
+    assert result.tracked_files == 4
+    assert result.scanned_files == 1
+    assert result.tracked_files == result.scanned_files + result.skipped_files
+    assert [(skip.path, skip.reason) for skip in result.skips] == [
+        ("link.txt", "symlink"),
+        ("pipe", "special_file"),
+        ("sock", "special_file"),
+    ]
+
+
+@pytest.mark.unit
+def test_scan_repo_special_files_go_through_the_selection(
+    scan_config: ScanConfig, plain_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "leak_scan.scanner.walk_files",
+        lambda root: (["clean.txt"], [], ["pipe", "sock"]),
+    )
+    result = scan_repo(
+        plain_dir, scan_config, source="dir", selection=Selection(excludes=("pipe",))
+    )
+    assert [skip.path for skip in result.skips] == ["sock"]
+    assert result.removed_files == 1
+    assert result.tracked_files == 2
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs need a POSIX platform")
+def test_scan_repo_dir_mode_completes_with_a_real_fifo(
+    scan_config: ScanConfig, plain_dir: Path
+) -> None:
+    os.mkfifo(plain_dir / "pipe")
+    result = scan_repo(plain_dir, scan_config, source="dir")
+    assert [(skip.path, skip.reason) for skip in result.skips] == [("pipe", "special_file")]
+    assert result.scanned_files == 2

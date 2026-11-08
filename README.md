@@ -255,6 +255,9 @@ With `--mode dir`, the scanner walks `--root`:
 - Entries named `.git` are never read or descended into.
 - Symlinks and Windows junctions are not followed; each one is reported as a
   `symlink` skip, so nothing outside `--root` is ever opened.
+- Entries that are not regular files (FIFOs, sockets, device files) are never
+  opened, because opening a FIFO without a writer blocks forever; each one is
+  reported as a `special_file` skip.
 - `.gitignore` is not consulted. Ignored files such as build output or local
   environment files are scanned unless you remove them with `--exclude`.
 - A directory that cannot be listed stops the scan with exit `2`.
@@ -317,8 +320,8 @@ The `text` key remains present in JSON for schema stability. Supply
 `--show-matches` only when raw source lines are required for a local
 investigation; raw output can copy a detected credential into terminal logs
 or saved reports. `--quiet` omits per-hit rows even when `--show-matches` is
-also supplied. Skip reasons are `path_allow`, `binary_suffix`, `null_byte`, and
-`symlink` (`dir` mode only). `source` is the `--mode` used, `repo` or `dir`; `selection` is always
+also supplied. Skip reasons are `path_allow`, `binary_suffix`, `null_byte`,
+`symlink` and `special_file` (the last two in `dir` mode only). `source` is the `--mode` used, `repo` or `dir`; `selection` is always
 present, with empty lists and `removed_files` of `0` when no selection option was
 given. In `dir` mode, `tracked_files` is the number of files the walk found
 after the selection.

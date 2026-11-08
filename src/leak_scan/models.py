@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-type SkipReason = Literal["path_allow", "binary_suffix", "null_byte", "symlink"]
+type SkipReason = Literal["path_allow", "binary_suffix", "null_byte", "symlink", "special_file"]
 type Source = Literal["repo", "dir"]
 
 

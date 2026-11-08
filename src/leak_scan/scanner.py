@@ -17,6 +17,7 @@ from leak_scan.models import (
     ScanResult,
     Selection,
     SkippedFile,
+    SkipReason,
     Source,
 )
 from leak_scan.selection import SelectionError, apply_selection
@@ -133,23 +134,29 @@ def scan_repo(
     """
     selection = selection or Selection()
     if source == "dir":
-        files, links = walk_files(repo)
+        files, links, special = walk_files(repo)
     else:
-        files, links = tracked_files(repo), []
-    candidate_count = len(files) + len(links)
+        files, links, special = tracked_files(repo), [], []
+    candidate_count = len(files) + len(links) + len(special)
     files = apply_selection(files, selection)
     links = apply_selection(links, selection)
-    if selection.active and not files and not links:
+    special = apply_selection(special, selection)
+    selected_count = len(files) + len(links) + len(special)
+    if selection.active and selected_count == 0:
         raise SelectionError("selection matched no files")
-    link_set = frozenset(links)
+    unscanned: dict[str, SkipReason] = {
+        **dict.fromkeys(links, "symlink"),
+        **dict.fromkeys(special, "special_file"),
+    }
     category_filter = set(categories) if categories else None
 
     hits: list[Hit] = []
     skips: list[SkippedFile] = []
     scanned_count = 0
-    for relpath in sorted([*files, *links]):
-        if relpath in link_set:
-            skips.append(SkippedFile(path=relpath, reason="symlink"))
+    for relpath in sorted([*files, *unscanned]):
+        unscanned_reason = unscanned.get(relpath)
+        if unscanned_reason is not None:
+            skips.append(SkippedFile(path=relpath, reason=unscanned_reason))
             continue
         if any(allow.search(relpath) for allow in config.path_allow):
             skips.append(SkippedFile(path=relpath, reason="path_allow"))
@@ -166,10 +173,10 @@ def scan_repo(
 
     return ScanResult(
         hits=tuple(hits),
-        tracked_files=len(files) + len(links),
+        tracked_files=selected_count,
         scanned_files=scanned_count,
         skips=tuple(skips),
         source=source,
         selection=selection,
-        removed_files=candidate_count - len(files) - len(links),
+        removed_files=candidate_count - selected_count,
     )

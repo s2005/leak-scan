@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import stat
 from pathlib import Path
 
 GIT_ENTRY = ".git"
@@ -22,17 +23,28 @@ def _raise_walk_error(error: OSError) -> None:
     raise WalkError(f"cannot list directory {error.filename!r}: {error.strerror}") from error
 
 
-def walk_files(root: Path) -> tuple[list[str], list[str]]:
-    """Return ``(files, links)`` found under ``root``.
+def _is_regular_file(path: str) -> bool:
+    """True for a regular file; checked with ``lstat`` so the entry is never opened."""
+    try:
+        return stat.S_ISREG(os.lstat(path).st_mode)
+    except OSError as exc:
+        raise WalkError(f"cannot stat {path!r}: {exc.strerror}") from exc
 
-    Both lists hold sorted ``/``-separated paths relative to ``root``. ``links``
-    holds every symlink or junction, to a file or to a directory; none is
-    followed, so nothing outside ``root`` is ever opened. Entries named
-    ``.git`` (directory or file) are neither listed nor descended into.
-    ``.gitignore`` is not consulted.
+
+def walk_files(root: Path) -> tuple[list[str], list[str], list[str]]:
+    """Return ``(files, links, special)`` found under ``root``.
+
+    All three lists hold sorted ``/``-separated paths relative to ``root``.
+    ``links`` holds every symlink or junction, to a file or to a directory; none
+    is followed, so nothing outside ``root`` is ever opened. ``special`` holds
+    entries that are not regular files (FIFOs, sockets, device files); they are
+    never opened, because opening a FIFO without a writer blocks forever.
+    Entries named ``.git`` (directory or file) are neither listed nor descended
+    into. ``.gitignore`` is not consulted.
     """
     files: list[str] = []
     links: list[str] = []
+    special: list[str] = []
     for current, dirnames, filenames in os.walk(
         root, topdown=True, onerror=_raise_walk_error, followlinks=False
     ):
@@ -48,9 +60,12 @@ def walk_files(root: Path) -> tuple[list[str], list[str]]:
         for name in filenames:
             if name == GIT_ENTRY:
                 continue
+            path = os.path.join(current, name)
             relpath = (base / name).relative_to(root).as_posix()
-            if _is_link(os.path.join(current, name)):
+            if _is_link(path):
                 links.append(relpath)
-            else:
+            elif _is_regular_file(path):
                 files.append(relpath)
-    return sorted(files), sorted(links)
+            else:
+                special.append(relpath)
+    return sorted(files), sorted(links), sorted(special)

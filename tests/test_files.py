@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import os
+import stat
 import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -23,14 +25,14 @@ def _make_tree(root: Path) -> None:
 @pytest.mark.unit
 def test_walk_lists_files_sorted_with_posix_separators(tmp_path: Path) -> None:
     _make_tree(tmp_path)
-    files, links = walk_files(tmp_path)
+    files, links, _ = walk_files(tmp_path)
     assert files == ["a.txt", "sub/b.txt", "sub/deep/c.txt"]
     assert links == []
 
 
 @pytest.mark.unit
 def test_walk_empty_directory(tmp_path: Path) -> None:
-    assert walk_files(tmp_path) == ([], [])
+    assert walk_files(tmp_path) == ([], [], [])
 
 
 @pytest.mark.unit
@@ -40,7 +42,7 @@ def test_walk_skips_git_directory_at_any_depth(tmp_path: Path) -> None:
     (tmp_path / ".git" / "config").write_text("x", encoding="utf-8")
     (tmp_path / "sub" / ".git").mkdir()
     (tmp_path / "sub" / ".git" / "HEAD").write_text("x", encoding="utf-8")
-    files, _ = walk_files(tmp_path)
+    files, _, _ = walk_files(tmp_path)
     assert files == ["a.txt", "sub/b.txt", "sub/deep/c.txt"]
 
 
@@ -48,7 +50,7 @@ def test_walk_skips_git_directory_at_any_depth(tmp_path: Path) -> None:
 def test_walk_skips_git_file(tmp_path: Path) -> None:
     _make_tree(tmp_path)
     (tmp_path / ".git").write_text("gitdir: elsewhere\n", encoding="utf-8")
-    files, _ = walk_files(tmp_path)
+    files, _, _ = walk_files(tmp_path)
     assert ".git" not in files
 
 
@@ -56,7 +58,7 @@ def test_walk_skips_git_file(tmp_path: Path) -> None:
 def test_walk_does_not_ignore_gitignored_files(tmp_path: Path) -> None:
     (tmp_path / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
     (tmp_path / "ignored.txt").write_text("x", encoding="utf-8")
-    files, _ = walk_files(tmp_path)
+    files, _, _ = walk_files(tmp_path)
     assert files == [".gitignore", "ignored.txt"]
 
 
@@ -73,7 +75,7 @@ def test_walk_lists_symlinks_without_following(tmp_path: Path) -> None:
         (root / "linkdir").symlink_to(outside, target_is_directory=True)
     except (OSError, NotImplementedError):
         pytest.skip("symlinks cannot be created on this platform")
-    files, links = walk_files(root)
+    files, links, _ = walk_files(root)
     assert files == ["real.txt"]
     assert links == ["link.txt", "linkdir"]
 
@@ -93,7 +95,7 @@ def test_walk_lists_junction_without_following(tmp_path: Path) -> None:
     )
     if result.returncode != 0:
         pytest.skip("cannot create a junction here")
-    files, links = walk_files(root)
+    files, links, _ = walk_files(root)
     assert files == []
     assert links == ["junc"]
 
@@ -109,7 +111,7 @@ def test_walk_treats_islink_entries_as_links(
         return Path(path).name in {"b.txt", "deep"} or real_islink(path)
 
     monkeypatch.setattr("leak_scan.files.os.path.islink", fake_islink)
-    files, links = walk_files(tmp_path)
+    files, links, _ = walk_files(tmp_path)
     assert files == ["a.txt"]
     assert links == ["sub/b.txt", "sub/deep"]
 
@@ -128,4 +130,46 @@ def test_walk_raises_on_unreadable_directory(
 
     monkeypatch.setattr("leak_scan.files.os.walk", failing_walk)
     with pytest.raises(WalkError, match="sub"):
+        walk_files(tmp_path)
+
+
+@pytest.mark.unit
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs need a POSIX platform")
+def test_walk_lists_fifo_as_special_and_does_not_hang(tmp_path: Path) -> None:
+    (tmp_path / "a.txt").write_text("a", encoding="utf-8")
+    os.mkfifo(tmp_path / "pipe")
+    files, links, special = walk_files(tmp_path)
+    assert files == ["a.txt"]
+    assert links == []
+    assert special == ["pipe"]
+
+
+@pytest.mark.unit
+def test_walk_treats_non_regular_lstat_results_as_special(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _make_tree(tmp_path)
+    real_lstat = os.lstat
+
+    def fake_lstat(path: str | os.PathLike[str]) -> os.stat_result | SimpleNamespace:
+        if Path(path).name in {"a.txt", "c.txt"}:
+            return SimpleNamespace(st_mode=stat.S_IFSOCK)
+        return real_lstat(path)
+
+    monkeypatch.setattr("leak_scan.files.os.lstat", fake_lstat)
+    files, links, special = walk_files(tmp_path)
+    assert files == ["sub/b.txt"]
+    assert links == []
+    assert special == ["a.txt", "sub/deep/c.txt"]
+
+
+@pytest.mark.unit
+def test_walk_raises_when_lstat_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _make_tree(tmp_path)
+
+    def failing_lstat(path: str | os.PathLike[str]) -> os.stat_result:
+        raise PermissionError(13, "Permission denied", str(path))
+
+    monkeypatch.setattr("leak_scan.files.os.lstat", failing_lstat)
+    with pytest.raises(WalkError, match=r"a\.txt"):
         walk_files(tmp_path)
