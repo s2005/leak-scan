@@ -10,6 +10,10 @@ class GitError(RuntimeError):
     """Raised when the git executable cannot be run, or fails."""
 
 
+class NotAGitRepoError(GitError):
+    """Raised when the scan root is not inside a git repository."""
+
+
 def tracked_files(repo: Path) -> list[str]:
     """Return the repository's tracked paths, relative to its root.
 
@@ -28,6 +32,8 @@ def tracked_files(repo: Path) -> list[str]:
 
     if result.returncode != 0:
         stderr = result.stderr.decode("utf-8", "replace").strip()
+        if "not a git repository" in stderr:
+            raise NotAGitRepoError(f"git ls-files failed in {repo}: {stderr}")
         raise GitError(f"git ls-files failed in {repo}: {stderr}")
 
     raw = result.stdout.decode("utf-8", "replace")

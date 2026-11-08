@@ -121,3 +121,13 @@ def git_repo(tmp_path: Path) -> GitRepo:
     repo.write("clean.txt", "nothing interesting here\n")
     repo.write("leaky.txt", "password: hunter2ok\njdoe was here\n")
     return repo
+
+
+@pytest.fixture
+def plain_dir(tmp_path: Path) -> Path:
+    """Create a scratch folder (not a git repository) with a clean and a leaky file."""
+    path = tmp_path / "plain"
+    path.mkdir()
+    (path / "clean.txt").write_text("nothing interesting here\n", encoding="utf-8")
+    (path / "leaky.txt").write_text("password: hunter2ok\njdoe was here\n", encoding="utf-8")
+    return path

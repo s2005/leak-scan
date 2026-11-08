@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 type SkipReason = Literal["path_allow", "binary_suffix", "null_byte", "symlink"]
+type Source = Literal["git", "files"]
 
 
 @dataclass(frozen=True)
@@ -106,12 +107,20 @@ class SkippedFile:
 
 @dataclass(frozen=True)
 class ScanResult:
-    """The outcome of scanning a repository."""
+    """The outcome of scanning a repository.
+
+    ``tracked_files`` counts the files selected for scanning (git-tracked or
+    found by the directory walk, after the selection). ``removed_files`` is how
+    many candidates the selection dropped before that count.
+    """
 
     hits: tuple[Hit, ...]
     tracked_files: int
     scanned_files: int
     skips: tuple[SkippedFile, ...]
+    source: Source = "git"
+    selection: Selection = Selection()
+    removed_files: int = 0
 
     def __post_init__(self) -> None:
         """Reject ambiguous accounting in manually constructed results."""

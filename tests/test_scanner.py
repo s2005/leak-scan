@@ -7,10 +7,25 @@ from pathlib import Path
 
 import pytest
 
-from leak_scan.models import AllowRules, Category, Rule, ScanConfig, ScanResult, SkippedFile
+from leak_scan.models import (
+    AllowRules,
+    Category,
+    Rule,
+    ScanConfig,
+    ScanResult,
+    Selection,
+    SkippedFile,
+    Source,
+)
 from leak_scan.scanner import ScanError, scan_file, scan_line, scan_repo
+from leak_scan.selection import SelectionError
 
 from .conftest import GitRepo
+
+_BASE_FILES = {
+    "clean.txt": "nothing interesting here\n",
+    "leaky.txt": "password: hunter2ok\njdoe was here\n",
+}
 
 
 @pytest.mark.unit
@@ -224,3 +239,130 @@ def test_scan_repo_raises_when_tracked_working_tree_path_is_missing(
 
     with pytest.raises(ScanError, match=r"missing\.txt"):
         scan_repo(git_repo.path, scan_config)
+
+
+@pytest.mark.unit
+def test_scan_repo_files_mode_scans_a_non_git_folder(
+    scan_config: ScanConfig, plain_dir: Path
+) -> None:
+    result = scan_repo(plain_dir, scan_config, source="files")
+    assert result.source == "files"
+    assert result.tracked_files == 2
+    assert result.scanned_files == 2
+    assert {hit.path for hit in result.hits} == {"leaky.txt"}
+    assert result.selection == Selection()
+    assert result.removed_files == 0
+
+
+@pytest.mark.unit
+def test_scan_repo_files_mode_scans_gitignored_files(
+    scan_config: ScanConfig, plain_dir: Path
+) -> None:
+    (plain_dir / ".gitignore").write_text("ignored.txt\n", encoding="utf-8")
+    (plain_dir / "ignored.txt").write_text("jdoe\n", encoding="utf-8")
+    result = scan_repo(plain_dir, scan_config, source="files")
+    assert "ignored.txt" in {hit.path for hit in result.hits}
+
+
+@pytest.mark.unit
+def test_scan_repo_files_mode_never_reads_dot_git(scan_config: ScanConfig, plain_dir: Path) -> None:
+    (plain_dir / ".git").mkdir()
+    (plain_dir / ".git" / "config").write_text("jdoe\n", encoding="utf-8")
+    result = scan_repo(plain_dir, scan_config, source="files")
+    assert all(not hit.path.startswith(".git") for hit in result.hits)
+    assert result.tracked_files == 2
+
+
+@pytest.mark.unit
+def test_scan_repo_selection_filters_before_accounting(
+    scan_config: ScanConfig, plain_dir: Path
+) -> None:
+    (plain_dir / "notes.md").write_text("jdoe\n", encoding="utf-8")
+    selection = Selection(includes=("*.txt", "*.md"), excludes=("leaky.txt",))
+    result = scan_repo(plain_dir, scan_config, source="files", selection=selection)
+    assert result.tracked_files == 2
+    assert result.tracked_files == result.scanned_files + result.skipped_files
+    assert result.removed_files == 1
+    assert result.skips == ()
+    assert {hit.path for hit in result.hits} == {"notes.md"}
+    assert result.selection == selection
+
+
+@pytest.mark.unit
+def test_scan_repo_git_and_files_modes_select_the_same_paths(
+    scan_config: ScanConfig, git_repo: GitRepo, tmp_path: Path
+) -> None:
+    contents = {
+        "src/a.py": "jdoe\n",
+        "src/deep/b.py": "jdoe\n",
+        "srcx/c.py": "jdoe\n",
+        "docs/guide.md": "jdoe\n",
+    }
+    plain = tmp_path / "copy"
+    plain.mkdir()
+    for relpath, text in [*contents.items(), *_BASE_FILES.items()]:
+        target = plain / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(text, encoding="utf-8")
+    for relpath, text in contents.items():
+        git_repo.write(relpath, text)
+
+    selection = Selection(folders=("src", "docs"), includes=("*.py", "*.md"), excludes=("b.py",))
+    from_git = scan_repo(git_repo.path, scan_config, selection=selection)
+    from_files = scan_repo(plain, scan_config, source="files", selection=selection)
+
+    assert {hit.path for hit in from_git.hits} == {"src/a.py", "docs/guide.md"}
+    assert {hit.path for hit in from_files.hits} == {hit.path for hit in from_git.hits}
+    assert from_files.tracked_files == from_git.tracked_files == 2
+    assert from_files.removed_files == from_git.removed_files
+
+
+@pytest.mark.unit
+def test_scan_repo_records_symlinks_as_skips_without_reading(
+    scan_config: ScanConfig, plain_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "leak_scan.scanner.walk_files",
+        lambda root: (["clean.txt"], ["link.txt", "linkdir"]),
+    )
+    result = scan_repo(plain_dir, scan_config, source="files")
+    assert result.tracked_files == 3
+    assert result.scanned_files == 1
+    assert [(skip.path, skip.reason) for skip in result.skips] == [
+        ("link.txt", "symlink"),
+        ("linkdir", "symlink"),
+    ]
+
+
+@pytest.mark.unit
+def test_scan_repo_symlinks_go_through_the_selection(
+    scan_config: ScanConfig, plain_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "leak_scan.scanner.walk_files",
+        lambda root: (["clean.txt"], ["link.txt", "linkdir"]),
+    )
+    result = scan_repo(
+        plain_dir, scan_config, source="files", selection=Selection(excludes=("link*",))
+    )
+    assert result.skips == ()
+    assert result.removed_files == 2
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("source", ["git", "files"])
+def test_scan_repo_empty_active_selection_raises(
+    scan_config: ScanConfig, git_repo: GitRepo, source: Source
+) -> None:
+    selection = Selection(includes=("*.nomatch",))
+    with pytest.raises(SelectionError, match="no files"):
+        scan_repo(git_repo.path, scan_config, source=source, selection=selection)
+
+
+@pytest.mark.unit
+def test_scan_repo_files_mode_without_selection_allows_empty_folder(
+    scan_config: ScanConfig, tmp_path: Path
+) -> None:
+    result = scan_repo(tmp_path, scan_config, source="files")
+    assert result.tracked_files == 0
+    assert result.hits == ()
