@@ -61,7 +61,16 @@ leak-scan --repo . --config <cfg> --quiet                 # summary only
 leak-scan --repo . --config <cfg> --category identity     # one category
 leak-scan --repo . --config <cfg> --format json           # machine-readable
 leak-scan --repo . --config <cfg> --show-matches          # intentional local raw view
+leak-scan --no-git --repo <folder> --config <cfg>         # folder that is not a git repo
+leak-scan --repo . --config <cfg> --folder src --include "*.py" --exclude "tests/**"
 ```
+
+`--folder`, `--include` and `--exclude` (repeatable, work with or without
+`--no-git`) apply in that order: folders, then includes, then excludes; exclude
+always wins. A pattern without `/` matches the file name at any depth. A
+selection that matches no files, or an invalid value, exits `2`. `--no-git` also
+scans `.gitignore`d files, so prune with `--exclude`. The output carries a
+`Selection:` line whenever one of the three options is used.
 
 ## The publication gate
 

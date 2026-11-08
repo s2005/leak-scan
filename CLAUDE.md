@@ -30,7 +30,12 @@ uv run mypy                  # type check
   (`Rule`, `AllowRules`, `Category`, `ScanConfig`, `Hit`, `ScanResult`). No I/O, no regex compilation.
 - `src/leak_scan/config.py` - loads and validates the YAML/JSON configuration file into a `ScanConfig`
   (`find_config`, `load_config`, `parse_config`) and raises `ConfigError` on anything invalid.
-- `src/leak_scan/gitrepo.py` - wraps `git ls-files -z` to list tracked files; raises `GitError`.
+- `src/leak_scan/gitrepo.py` - wraps `git ls-files -z` to list tracked files; raises `GitError`
+  (`NotAGitRepoError` when the folder is not a repository).
+- `src/leak_scan/files.py` - directory walk for `--no-git`: lists files and links, skips `.git`, never
+  follows links; raises `WalkError`.
+- `src/leak_scan/selection.py` - validates and applies `--folder`/`--include`/`--exclude`
+  (`build_selection`, `apply_selection`); raises `SelectionError`.
 - `src/leak_scan/scanner.py` - applies the configured rules and allowlists to tracked files
   (`scan_line`, `scan_file`, `scan_repo`).
 - `src/leak_scan/report.py` - renders a `ScanResult` as text or JSON (`render_text`, `render_json`).
