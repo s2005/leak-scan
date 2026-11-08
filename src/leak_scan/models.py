@@ -58,6 +58,26 @@ class ScanConfig:
 
 
 @dataclass(frozen=True)
+class Selection:
+    """Which candidate files a scan is restricted to.
+
+    ``folders`` holds normalised ``/``-separated prefixes relative to the scan
+    root (the empty string means the whole root). ``includes`` and ``excludes``
+    hold glob patterns. The stages apply in that order: folders, includes,
+    then excludes.
+    """
+
+    folders: tuple[str, ...] = ()
+    includes: tuple[str, ...] = ()
+    excludes: tuple[str, ...] = ()
+
+    @property
+    def active(self) -> bool:
+        """Return True when any folder, include or exclude was given."""
+        return bool(self.folders or self.includes or self.excludes)
+
+
+@dataclass(frozen=True)
 class Hit:
     """A single surviving pattern match."""
 
