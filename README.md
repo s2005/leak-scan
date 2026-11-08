@@ -3,7 +3,7 @@
 Scan a git-tracked tree for content that must not be published.
 
 `leak-scan` walks every file `git ls-files` reports for a repository (or, with
-`--no-git`, every file in a plain folder) and applies a configurable set of regular-expression rules,
+`--mode dir`, every file in a plain folder) and applies a configurable set of regular-expression rules,
 grouped into categories, to flag lines that must never reach a public
 audience: author identity, employer affiliation, machine-specific paths,
 dangling references to private task records, credentials, and anything else
@@ -20,7 +20,7 @@ site-specific literal at all.
 - Python 3.13 or newer
 - [uv](https://docs.astral.sh/uv/)
 - `git` on `PATH` (the default mode only reads files `git ls-files` reports; not needed with
-  `--no-git`)
+  `--mode dir`)
 
 ## Install
 
@@ -47,7 +47,7 @@ leak-scan --help
 ```
 
 The version command prints exactly `leak-scan 0.0.1`. Help includes the same
-`leak-scan 0.0.1` version banner. Neither discovery command requires `--repo`
+`leak-scan 0.0.1` version banner. Neither discovery command requires `--root`
 or any other scan input.
 
 If you change the source code, reinstall the command so the executable uses the
@@ -60,7 +60,7 @@ uv tool install --from . --force leak-scan
 ## Quick start
 
 ```bash
-uv run leak-scan --repo . --config leak-scan.yaml
+uv run leak-scan --root . --config leak-scan.yaml
 ```
 
 ## Configuration
@@ -75,7 +75,7 @@ entirely from placeholder values - are committed, as a documented starting
 point to copy from.
 
 If `--config` is omitted, `leak-scan` searches the current working directory
-and then `--repo` for the first of `leak-scan.yaml`, `leak-scan.yml`,
+and then `--root` for the first of `leak-scan.yaml`, `leak-scan.yml`,
 `leak-scan.json`.
 
 ### Schema (version 1)
@@ -179,10 +179,10 @@ binary_suffixes: [".png", ".jpg", ".pdf", ".zip"]
 
 | Option | Required | Default | Description |
 | --- | --- | --- | --- |
-| `--repo` | yes | - | Path to the git repository or exported tree to scan. |
-| `--config` | no | search cwd then `--repo` | Path to the scanner configuration file. |
-| `--no-git` | no | `False` | Scan every file found by walking `--repo` instead of the files git tracks, so a folder that is not a git repository can be scanned. |
-| `--folder` | no | all of `--repo` | Scan only this directory, relative to `--repo`. Repeatable. |
+| `--root` | yes | - | Path to scan: the git repository in `--mode repo`, a plain folder in `--mode dir`. `--repo` is accepted as an alias. |
+| `--config` | no | search cwd then `--root` | Path to the scanner configuration file. |
+| `--mode` | no | `repo` | Where the file list comes from. `repo` scans the files git tracks; `dir` walks `--root`, so a folder that is not a git repository can be scanned. |
+| `--folder` | no | all of `--root` | Scan only this directory, relative to `--root`. Repeatable. |
 | `--include` | no | keep every file | Keep only files whose path matches this glob. Repeatable. Applied after `--folder`, before `--exclude`. |
 | `--exclude` | no | remove nothing | Remove files matching this glob from what `--folder` and `--include` selected. Repeatable. |
 | `--category` | no | all categories | Limit output to a single configured category. |
@@ -197,36 +197,36 @@ binary_suffixes: [".png", ".jpg", ".pdf", ".zip"]
 
 ```bash
 # Scan the current tree with an explicit config file
-uv run leak-scan --repo . --config leak-scan.yaml
+uv run leak-scan --root . --config leak-scan.yaml
 
 # Summary only
-uv run leak-scan --repo . --quiet
+uv run leak-scan --root . --quiet
 
 # Limit to one category
-uv run leak-scan --repo . --category credential
+uv run leak-scan --root . --category credential
 
 # Scan a folder that is not a git repository
-uv run leak-scan --no-git --repo ./exported-tree --config leak-scan.yaml
+uv run leak-scan --mode dir --root ./exported-tree --config leak-scan.yaml
 
 # Scan only some folders, keep Python and Markdown files, drop anything under tests/
-uv run leak-scan --repo . --folder src --folder docs --include "*.py" --include "*.md" \
+uv run leak-scan --root . --folder src --folder docs --include "*.py" --include "*.md" \
   --exclude "tests/**"
 
 # Machine-readable output
-uv run leak-scan --repo . --format json
+uv run leak-scan --root . --format json
 
 # Intentionally reveal raw matching lines during a local investigation
-uv run leak-scan --repo . --show-matches
+uv run leak-scan --root . --show-matches
 ```
 
 ## Selecting what is scanned
 
 `--folder`, `--include` and `--exclude` work with both the default git mode and
-`--no-git`. They are applied in this order, and a file must survive every
+`--mode dir`. They are applied in this order, and a file must survive every
 stage:
 
 1. `--folder DIR` (repeatable): the file must lie under one of the folders,
-   given relative to `--repo`. Without it, all of `--repo` is in scope.
+   given relative to `--root`. Without it, all of `--root` is in scope.
 2. `--include GLOB` (repeatable): the file must match at least one pattern.
    Without it, every file passes.
 3. `--exclude GLOB` (repeatable): a file matching any pattern is removed, even
@@ -235,26 +235,26 @@ stage:
 The config's `path_allow` and the binary and null-byte checks then run on the
 survivors exactly as before.
 
-Patterns are shell-style globs matched against the path relative to `--repo`,
+Patterns are shell-style globs matched against the path relative to `--root`,
 written with `/` on every platform, and are case-sensitive. `**` spans any
 number of directories. A pattern with no `/` matches the file name at any
 depth, so `*.md` matches `a/b/c.md`; a pattern with a `/` is matched against
 the whole path, so `src/*.py` does not match `src/a/b.py` but `src/**/*.py`
-does. Patterns are relative to `--repo`, not to a `--folder`. Gitignore
+does. Patterns are relative to `--root`, not to a `--folder`. Gitignore
 features such as `!` negation and trailing-slash directory patterns are not
 supported.
 
 Invalid values exit `2`: a `--folder` that does not exist, is not a directory
-or lies outside `--repo`, and an empty pattern, one starting with `/`, one
+or lies outside `--root`, and an empty pattern, one starting with `/`, one
 containing a `..` segment, or one containing a backslash (use `/`). A
 selection that leaves no files also exits `2`, so a typo cannot pass as a
 clean scan.
 
-With `--no-git`, the scanner walks `--repo`:
+With `--mode dir`, the scanner walks `--root`:
 
 - Entries named `.git` are never read or descended into.
 - Symlinks and Windows junctions are not followed; each one is reported as a
-  `symlink` skip, so nothing outside `--repo` is ever opened.
+  `symlink` skip, so nothing outside `--root` is ever opened.
 - `.gitignore` is not consulted. Ignored files such as build output or local
   environment files are scanned unless you remove them with `--exclude`.
 - A directory that cannot be listed stops the scan with exit `2`.
@@ -278,7 +278,7 @@ credential       0 hit(s) in    0 file(s)
 TOTAL            1 hit(s)
 ```
 
-In `--no-git` mode the accounting line reads `files` instead of `tracked
+In `dir` mode the accounting line reads `files` instead of `tracked
 files`. When `--folder`, `--include` or `--exclude` is given, one extra line
 follows it, also under `--quiet`, so a narrow selection is never mistaken for a
 clean tree:
@@ -287,7 +287,7 @@ clean tree:
 Selection: folders=src; include=*.py; exclude=tests/**; removed 14 file(s)
 ```
 
-Empty lists print as `-` and the whole of `--repo` as `.`. Files removed by
+Empty lists print as `-` and the whole of `--root` as `.`. Files removed by
 the selection are dropped before counting, so they are not part of the file
 counts and are not listed as skips.
 
@@ -318,9 +318,9 @@ The `text` key remains present in JSON for schema stability. Supply
 investigation; raw output can copy a detected credential into terminal logs
 or saved reports. `--quiet` omits per-hit rows even when `--show-matches` is
 also supplied. Skip reasons are `path_allow`, `binary_suffix`, `null_byte`, and
-`symlink` (`--no-git` only). `source` is `git` or `files`; `selection` is always
+`symlink` (`dir` mode only). `source` is `git` or `files`; `selection` is always
 present, with empty lists and `removed_files` of `0` when no selection option was
-given. With `--no-git`, `tracked_files` is the number of files the walk found
+given. In `dir` mode, `tracked_files` is the number of files the walk found
 after the selection.
 
 ## Exit codes
@@ -329,12 +329,12 @@ after the selection.
 | --- | --- |
 | 0 | No hits. |
 | 1 | At least one hit survived. This is the tool's normal "found something" signal, not a crash. |
-| 2 | Usage or environment error: unreadable, missing, or invalid config; `--repo` is not a directory; unknown `--category`; an invalid `--folder`, `--include` or `--exclude`; a selection that leaves no files; an unreadable directory during a `--no-git` walk; or a git failure (a folder that is not a git repository gets a hint to use `--no-git`). |
+| 2 | Usage or environment error: unreadable, missing, or invalid config; `--root` is not a directory; unknown `--category`; an invalid `--folder`, `--include` or `--exclude`; a selection that leaves no files; an unreadable directory during a `--mode dir` walk; or a git failure (a folder that is not a git repository gets a hint to use `--mode dir`). |
 
 ## Scan boundaries
 
 In the default mode `leak-scan` scans the current working-tree bytes of paths
-reported by `git ls-files`; with `--no-git` it scans the files found by walking
+reported by `git ls-files`; with `--mode dir` it scans the files found by walking
 the folder (see [Selecting what is scanned](#selecting-what-is-scanned)). It does not inspect earlier Git commits, reflogs, unreachable
 Git objects, or content that exists only in another ref. A clean current-tree
 scan therefore says nothing about values removed from an existing repository's
@@ -372,7 +372,7 @@ cd <fresh-dir>
 git init -b main
 git add .
 
-leak-scan --repo . --config <path-to-your-untracked-config>
+leak-scan --root . --config <path-to-your-untracked-config>
 ```
 
 This is a history-free publication path only when the exported files are
@@ -384,7 +384,7 @@ Two caveats:
 
 1. The default mode reads what `git ls-files` reports, so in a fresh directory
    it must run **after** `git init` and `git add .`, or it will find no files
-   and report a misleading clean result. Alternatively pass `--no-git`, which
+   and report a misleading clean result. Alternatively pass `--mode dir`, which
    walks the directory and needs no `git init`; it also scans files a
    `.gitignore` would hide, so keep the export clean or use `--exclude`.
 2. Any pattern hit found there blocks publication. Fix the source, not the

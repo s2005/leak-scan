@@ -32,7 +32,7 @@ uv run mypy                  # type check
   (`find_config`, `load_config`, `parse_config`) and raises `ConfigError` on anything invalid.
 - `src/leak_scan/gitrepo.py` - wraps `git ls-files -z` to list tracked files; raises `GitError`
   (`NotAGitRepoError` when the folder is not a repository).
-- `src/leak_scan/files.py` - directory walk for `--no-git`: lists files and links, skips `.git`, never
+- `src/leak_scan/files.py` - directory walk for `--mode dir`: lists files and links, skips `.git`, never
   follows links; raises `WalkError`.
 - `src/leak_scan/selection.py` - validates and applies `--folder`/`--include`/`--exclude`
   (`build_selection`, `apply_selection`); raises `SelectionError`.

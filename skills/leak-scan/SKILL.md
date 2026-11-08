@@ -36,7 +36,7 @@ leak-scan --help
 ```
 
 `--version` prints exactly `leak-scan 0.0.1`. The help output includes the
-same `leak-scan 0.0.1` banner. Both commands exit without requiring `--repo`
+same `leak-scan 0.0.1` banner. Both commands exit without requiring `--root`
 or a config file.
 
 It needs a config file. The committed `leak-scan.example.yaml` is sanitised and
@@ -48,7 +48,7 @@ before the first run.
 ## Scanning a working repository
 
 ```bash
-leak-scan --repo <path-to-repo> --config <path-to>/leak-scan.yaml
+leak-scan --root <path-to-repo> --config <path-to>/leak-scan.yaml
 ```
 
 Exit codes: `0` clean, `1` at least one hit, `2` usage or environment error.
@@ -57,18 +57,18 @@ Exit `1` is the normal "found something" signal, not a crash - read the output.
 Useful narrowing while working through an inventory:
 
 ```bash
-leak-scan --repo . --config <cfg> --quiet                 # summary only
-leak-scan --repo . --config <cfg> --category identity     # one category
-leak-scan --repo . --config <cfg> --format json           # machine-readable
-leak-scan --repo . --config <cfg> --show-matches          # intentional local raw view
-leak-scan --no-git --repo <folder> --config <cfg>         # folder that is not a git repo
-leak-scan --repo . --config <cfg> --folder src --include "*.py" --exclude "tests/**"
+leak-scan --root . --config <cfg> --quiet                 # summary only
+leak-scan --root . --config <cfg> --category identity     # one category
+leak-scan --root . --config <cfg> --format json           # machine-readable
+leak-scan --root . --config <cfg> --show-matches          # intentional local raw view
+leak-scan --mode dir --root <folder> --config <cfg>      # folder that is not a git repo
+leak-scan --root . --config <cfg> --folder src --include "*.py" --exclude "tests/**"
 ```
 
-`--folder`, `--include` and `--exclude` (repeatable, work with or without
-`--no-git`) apply in that order: folders, then includes, then excludes; exclude
+`--folder`, `--include` and `--exclude` (repeatable, work in both
+modes) apply in that order: folders, then includes, then excludes; exclude
 always wins. A pattern without `/` matches the file name at any depth. A
-selection that matches no files, or an invalid value, exits `2`. `--no-git` also
+selection that matches no files, or an invalid value, exits `2`. `--mode dir` also
 scans `.gitignore`d files, so prune with `--exclude`. The output carries a
 `Selection:` line whenever one of the three options is used.
 
@@ -85,7 +85,7 @@ cd <fresh-dir>
 git init -b main
 git add .
 
-leak-scan --repo . --config <path-to>/leak-scan.yaml
+leak-scan --root . --config <path-to>/leak-scan.yaml
 ```
 
 `git archive` serializes exactly the tracked set, so private local files cannot
