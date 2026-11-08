@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 type SkipReason = Literal["path_allow", "binary_suffix", "null_byte", "symlink"]
-type Source = Literal["git", "files"]
+type Source = Literal["repo", "dir"]
 
 
 @dataclass(frozen=True)
@@ -118,7 +118,7 @@ class ScanResult:
     tracked_files: int
     scanned_files: int
     skips: tuple[SkippedFile, ...]
-    source: Source = "git"
+    source: Source = "repo"
     selection: Selection = Selection()
     removed_files: int = 0
 

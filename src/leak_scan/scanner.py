@@ -118,12 +118,12 @@ def scan_repo(
     config: ScanConfig,
     categories: Sequence[str] | None = None,
     *,
-    source: Source = "git",
+    source: Source = "repo",
     selection: Selection | None = None,
 ) -> ScanResult:
     """Scan the files of ``repo`` chosen by ``source`` and ``selection``.
 
-    ``source="git"`` scans the git-tracked files; ``source="files"`` walks the
+    ``source="repo"`` scans the git-tracked files; ``source="dir"`` walks the
     directory, so it works on a folder that is not a git repository. The
     selection (folders, then includes, then excludes) drops files before any
     accounting. ``categories``, when given, restricts the returned hits to those
@@ -132,7 +132,7 @@ def scan_repo(
     files.
     """
     selection = selection or Selection()
-    if source == "files":
+    if source == "dir":
         files, links = walk_files(repo)
     else:
         files, links = tracked_files(repo), []

@@ -441,7 +441,7 @@ def test_json_output_carries_source_and_selection(
     )
     assert code == 1
     payload = json.loads(out)
-    assert payload["source"] == "files"
+    assert payload["source"] == "dir"
     assert payload["selection"]["include"] == ["*.txt"]
     assert payload["selection"]["removed_files"] == 0
 
@@ -581,3 +581,38 @@ def test_root_not_a_directory_exits_2_naming_the_scan_root(
     code, _, err = _run(capsys, "--root", str(tmp_path / "missing"), "--config", str(config_file))
     assert code == 2
     assert "scan root is not a directory" in err
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("mode", ["repo", "dir"])
+def test_json_source_equals_the_mode_used(
+    git_repo: GitRepo, config_file: Path, capsys: pytest.CaptureFixture[str], mode: str
+) -> None:
+    _, out, _ = _run(
+        capsys,
+        "--root",
+        str(git_repo.path),
+        "--mode",
+        mode,
+        "--config",
+        str(config_file),
+        "--format",
+        "json",
+    )
+    assert json.loads(out)["source"] == mode
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(("mode", "noun"), [("repo", "tracked files"), ("dir", "files")])
+def test_text_label_follows_the_mode(
+    git_repo: GitRepo,
+    config_file: Path,
+    capsys: pytest.CaptureFixture[str],
+    mode: str,
+    noun: str,
+) -> None:
+    _, out, _ = _run(
+        capsys, "--root", str(git_repo.path), "--mode", mode, "--config", str(config_file)
+    )
+    assert f" {noun} in " in out
+    assert ("tracked files" in out) == (mode == "repo")

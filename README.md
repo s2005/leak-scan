@@ -296,7 +296,7 @@ JSON output (`--format json`) is a single document:
 ```json
 {
   "repo": "/path/to/repo",
-  "source": "git",
+  "source": "repo",
   "tracked_files": 128,
   "scanned_files": 126,
   "skipped_files": 2,
@@ -318,7 +318,7 @@ The `text` key remains present in JSON for schema stability. Supply
 investigation; raw output can copy a detected credential into terminal logs
 or saved reports. `--quiet` omits per-hit rows even when `--show-matches` is
 also supplied. Skip reasons are `path_allow`, `binary_suffix`, `null_byte`, and
-`symlink` (`dir` mode only). `source` is `git` or `files`; `selection` is always
+`symlink` (`dir` mode only). `source` is the `--mode` used, `repo` or `dir`; `selection` is always
 present, with empty lists and `removed_files` of `0` when no selection option was
 given. In `dir` mode, `tracked_files` is the number of files the walk found
 after the selection.

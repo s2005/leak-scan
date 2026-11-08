@@ -229,7 +229,7 @@ def test_render_json_counts_keys_are_sorted() -> None:
 
 @pytest.mark.unit
 def test_render_text_files_source_says_files_not_tracked_files() -> None:
-    result = replace(_build_result(), source="files")
+    result = replace(_build_result(), source="dir")
     text = render_text(
         result,
         _build_config(),
@@ -279,7 +279,7 @@ def test_render_json_without_selection_has_empty_lists() -> None:
     payload = json.loads(
         render_json(_build_result(), repo=Path("/repo"), quiet=False, show_matches=False)
     )
-    assert payload["source"] == "git"
+    assert payload["source"] == "repo"
     assert payload["selection"] == {
         "folders": [],
         "include": [],
@@ -291,9 +291,9 @@ def test_render_json_without_selection_has_empty_lists() -> None:
 @pytest.mark.unit
 def test_render_json_reports_source_and_selection() -> None:
     selection = Selection(folders=("src",), includes=("*.py",), excludes=("tests/**",))
-    result = replace(_build_result(), source="files", selection=selection, removed_files=2)
+    result = replace(_build_result(), source="dir", selection=selection, removed_files=2)
     payload = json.loads(render_json(result, repo=Path("/repo"), quiet=True, show_matches=False))
-    assert payload["source"] == "files"
+    assert payload["source"] == "dir"
     assert payload["selection"] == {
         "folders": ["src"],
         "include": ["*.py"],

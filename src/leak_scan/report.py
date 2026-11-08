@@ -37,7 +37,7 @@ def render_text(
             text = hit.line[:MAX_LINE] if show_matches else REDACTED
             lines.append(f"{hit.path}:{hit.lineno}: [{hit.category}] {hit.label}: {text}")
 
-    noun = "tracked files" if result.source == "git" else "files"
+    noun = "tracked files" if result.source == "repo" else "files"
     lines.append("")
     lines.append(
         f"Scanned {result.scanned_files} of {result.tracked_files} {noun} in {repo}; "

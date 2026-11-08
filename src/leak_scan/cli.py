@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
 FORMATS = ["text", "json"]
-MODE_SOURCES: dict[str, Source] = {"repo": "git", "dir": "files"}
+MODES = ["repo", "dir"]
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -55,7 +55,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--mode",
-        choices=list(MODE_SOURCES),
+        choices=MODES,
         default="repo",
         help="Where the file list comes from. repo: the files git tracks "
         "(git ls-files). dir: every file found by walking --root, so a folder that "
@@ -186,7 +186,7 @@ def run(args: argparse.Namespace) -> int:
         logger.error("%s", exc)
         return 2
 
-    source = MODE_SOURCES[args.mode]
+    source: Source = args.mode
     try:
         result = scan_repo(repo, config, categories=categories, source=source, selection=selection)
     except NotAGitRepoError as exc:
@@ -197,7 +197,7 @@ def run(args: argparse.Namespace) -> int:
         logger.error("%s", exc)
         return 2
 
-    if source == "files" and not selection.active and result.tracked_files == 0:
+    if source == "dir" and not selection.active and result.tracked_files == 0:
         logger.warning("no files found under %s; nothing was scanned", repo)
 
     if args.format == "json":
