@@ -11,7 +11,7 @@ import re
 from dataclasses import dataclass
 from typing import Literal
 
-type SkipReason = Literal["path_allow", "binary_suffix", "null_byte"]
+type SkipReason = Literal["path_allow", "binary_suffix", "null_byte", "symlink"]
 
 
 @dataclass(frozen=True)
