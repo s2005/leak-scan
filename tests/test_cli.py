@@ -48,7 +48,9 @@ def test_help_lists_every_named_option(capsys: pytest.CaptureFixture[str]) -> No
     for option in (
         "--repo",
         "--config",
-        "--no-git",
+        "--root",
+        "--repo",
+        "--mode",
         "--folder",
         "--include",
         "--exclude",
@@ -277,27 +279,29 @@ def _run(capsys: pytest.CaptureFixture[str], *argv: str) -> tuple[int, str, str]
 
 
 @pytest.mark.unit
-def test_non_git_folder_without_no_git_exits_2_with_hint(
+def test_non_git_folder_without_mode_dir_exits_2_with_hint(
     plain_dir: Path, config_file: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     code, _, err = _run(capsys, "--repo", str(plain_dir), "--config", str(config_file))
     assert code == 2
     assert "not a git repository" in err
-    assert "--no-git" in err
+    assert "--mode dir" in err
 
 
 @pytest.mark.unit
-def test_no_git_scans_plain_folder_and_exits_1_on_hit(
+def test_mode_dir_scans_plain_folder_and_exits_1_on_hit(
     plain_dir: Path,
     config_file: Path,
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def fail_if_called(repo: Path) -> list[str]:
-        raise AssertionError("git must not be invoked with --no-git")
+        raise AssertionError("git must not be invoked in --mode dir")
 
     monkeypatch.setattr("leak_scan.scanner.tracked_files", fail_if_called)
-    code, out, _ = _run(capsys, "--no-git", "--repo", str(plain_dir), "--config", str(config_file))
+    code, out, _ = _run(
+        capsys, "--mode", "dir", "--root", str(plain_dir), "--config", str(config_file)
+    )
     assert code == 1
     assert "leaky.txt:2: [identity]" in out
     assert "Scanned 2 of 2 files in" in out
@@ -305,23 +309,25 @@ def test_no_git_scans_plain_folder_and_exits_1_on_hit(
 
 
 @pytest.mark.unit
-def test_no_git_clean_plain_folder_exits_0(
+def test_mode_dir_clean_plain_folder_exits_0(
     tmp_path: Path, config_file: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     folder = tmp_path / "clean-folder"
     folder.mkdir()
     (folder / "clean.txt").write_text("nothing interesting here\n", encoding="utf-8")
-    code, _, _ = _run(capsys, "--no-git", "--repo", str(folder), "--config", str(config_file))
+    code, _, _ = _run(capsys, "--mode", "dir", "--root", str(folder), "--config", str(config_file))
     assert code == 0
 
 
 @pytest.mark.unit
-def test_no_git_empty_folder_exits_0_with_warning(
+def test_mode_dir_empty_folder_exits_0_with_warning(
     tmp_path: Path, config_file: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     folder = tmp_path / "empty-folder"
     folder.mkdir()
-    code, _, err = _run(capsys, "--no-git", "--repo", str(folder), "--config", str(config_file))
+    code, _, err = _run(
+        capsys, "--mode", "dir", "--root", str(folder), "--config", str(config_file)
+    )
     assert code == 0
     assert "WARNING" in err
     assert "no files found" in err
@@ -332,7 +338,7 @@ def test_selection_options_narrow_a_plain_folder(
     plain_dir: Path, config_file: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     (plain_dir / "notes.md").write_text("jdoe\n", encoding="utf-8")
-    base = ("--no-git", "--repo", str(plain_dir), "--config", str(config_file))
+    base = ("--mode", "dir", "--root", str(plain_dir), "--config", str(config_file))
     code, out, _ = _run(capsys, *base, "--include", "*.md")
     assert code == 1
     assert "notes.md:1:" in out
@@ -350,7 +356,8 @@ def test_selection_line_is_kept_under_quiet(
 ) -> None:
     code, out, _ = _run(
         capsys,
-        "--no-git",
+        "--mode",
+        "dir",
         "--repo",
         str(plain_dir),
         "--config",
@@ -372,7 +379,8 @@ def test_folder_option_restricts_to_subtree(
     (plain_dir / "sub" / "inner.txt").write_text("jdoe\n", encoding="utf-8")
     code, out, _ = _run(
         capsys,
-        "--no-git",
+        "--mode",
+        "dir",
         "--repo",
         str(plain_dir),
         "--config",
@@ -420,7 +428,8 @@ def test_json_output_carries_source_and_selection(
 ) -> None:
     code, out, _ = _run(
         capsys,
-        "--no-git",
+        "--mode",
+        "dir",
         "--repo",
         str(plain_dir),
         "--config",
@@ -462,7 +471,7 @@ def test_invalid_selection_value_exits_2_naming_it(
     value: str,
 ) -> None:
     code, out, err = _run(
-        capsys, "--no-git", "--repo", str(plain_dir), "--config", str(config_file), flag, value
+        capsys, "--mode", "dir", "--root", str(plain_dir), "--config", str(config_file), flag, value
     )
     assert code == 2
     assert out == ""
@@ -472,13 +481,20 @@ def test_invalid_selection_value_exits_2_naming_it(
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("no_git", [False, True])
+@pytest.mark.parametrize("mode", ["repo", "dir"])
 def test_selection_matching_nothing_exits_2(
-    git_repo: GitRepo, config_file: Path, capsys: pytest.CaptureFixture[str], no_git: bool
+    git_repo: GitRepo, config_file: Path, capsys: pytest.CaptureFixture[str], mode: str
 ) -> None:
-    argv = ["--repo", str(git_repo.path), "--config", str(config_file), "--include", "*.nomatch"]
-    if no_git:
-        argv.append("--no-git")
+    argv = [
+        "--root",
+        str(git_repo.path),
+        "--mode",
+        mode,
+        "--config",
+        str(config_file),
+        "--include",
+        "*.nomatch",
+    ]
     code, out, err = _run(capsys, *argv)
     assert code == 2
     assert out == ""
@@ -496,6 +512,72 @@ def test_unreadable_directory_during_walk_exits_2(
         raise WalkError("cannot list directory 'sub'")
 
     monkeypatch.setattr("leak_scan.scanner.walk_files", broken_walk)
-    code, _, err = _run(capsys, "--no-git", "--repo", str(plain_dir), "--config", str(config_file))
+    code, _, err = _run(
+        capsys, "--mode", "dir", "--root", str(plain_dir), "--config", str(config_file)
+    )
     assert code == 2
     assert "cannot list directory" in err
+
+
+@pytest.mark.unit
+def test_parser_mode_defaults_to_repo_and_accepts_dir() -> None:
+    parser = build_parser()
+    assert parser.parse_args(["--root", "x"]).mode == "repo"
+    assert parser.parse_args(["--root", "x", "--mode", "repo"]).mode == "repo"
+    assert parser.parse_args(["--root", "x", "--mode", "dir"]).mode == "dir"
+
+
+@pytest.mark.unit
+def test_invalid_mode_value_exits_2(
+    plain_dir: Path, config_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["--root", str(plain_dir), "--config", str(config_file), "--mode", "bogus"])
+    assert exc.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+def test_no_git_option_is_gone(
+    plain_dir: Path, config_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["--root", str(plain_dir), "--config", str(config_file), "--no-git"])
+    assert exc.value.code == 2
+    assert "--no-git" in capsys.readouterr().err
+
+
+@pytest.mark.unit
+def test_help_shows_mode_values_and_root_alias(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    help_text = capsys.readouterr().out
+    assert "--root, --repo PATH" in help_text
+    assert "{repo,dir}" in help_text
+    assert "--no-git" not in help_text
+
+
+@pytest.mark.unit
+def test_root_and_repo_are_equivalent(
+    git_repo: GitRepo, config_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    via_root = _run(capsys, "--root", str(git_repo.path), "--config", str(config_file))
+    via_repo = _run(capsys, "--repo", str(git_repo.path), "--config", str(config_file))
+    assert via_root == via_repo
+    assert via_root[0] == 1
+
+
+@pytest.mark.unit
+def test_omitting_root_and_repo_exits_2(config_file: Path) -> None:
+    with pytest.raises(SystemExit) as exc:
+        main(["--config", str(config_file)])
+    assert exc.value.code == 2
+
+
+@pytest.mark.unit
+def test_root_not_a_directory_exits_2_naming_the_scan_root(
+    tmp_path: Path, config_file: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    code, _, err = _run(capsys, "--root", str(tmp_path / "missing"), "--config", str(config_file))
+    assert code == 2
+    assert "scan root is not a directory" in err

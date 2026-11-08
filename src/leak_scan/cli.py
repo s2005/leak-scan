@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 LOG_LEVELS = ["DEBUG", "INFO", "WARNING", "ERROR"]
 FORMATS = ["text", "json"]
+MODE_SOURCES: dict[str, Source] = {"repo": "git", "dir": "files"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -37,38 +38,44 @@ def build_parser() -> argparse.ArgumentParser:
         version=f"%(prog)s {__version__}",
     )
     parser.add_argument(
+        "--root",
         "--repo",
+        dest="repo",
+        metavar="PATH",
         required=True,
-        help="Path to the git repository or exported tree to scan. Required.",
+        help="Path to scan: the git repository in --mode repo, a plain folder in "
+        "--mode dir. --repo is an alias. Required.",
     )
     parser.add_argument(
         "--config",
         default=None,
         help="Path to the scanner configuration file. Default: search the current "
-        "working directory then --repo for one of "
+        "working directory then --root for one of "
         f"{', '.join(DEFAULT_CONFIG_NAMES)}.",
     )
     parser.add_argument(
-        "--no-git",
-        action="store_true",
-        help="Scan every file found by walking --repo instead of the files git tracks, "
-        "so a folder that is not a git repository can be scanned. Never reads .git "
-        "entries or follows symlinks. Default: False (scan git-tracked files).",
+        "--mode",
+        choices=list(MODE_SOURCES),
+        default="repo",
+        help="Where the file list comes from. repo: the files git tracks "
+        "(git ls-files). dir: every file found by walking --root, so a folder that "
+        "is not a git repository can be scanned; never reads .git entries, follows "
+        "symlinks or consults .gitignore. Default: repo.",
     )
     parser.add_argument(
         "--folder",
         action="append",
         default=None,
         metavar="DIR",
-        help="Scan only this directory, relative to --repo. Repeatable. "
-        "Default: the whole of --repo.",
+        help="Scan only this directory, relative to --root. Repeatable. "
+        "Default: the whole of --root.",
     )
     parser.add_argument(
         "--include",
         action="append",
         default=None,
         metavar="GLOB",
-        help="Keep only files whose path relative to --repo matches this glob; a "
+        help="Keep only files whose path relative to --root matches this glob; a "
         "pattern without '/' matches the file name at any depth, '**' spans "
         "directories, matching is case-sensitive. Repeatable. Applied after --folder "
         "and before --exclude. Default: keep every file.",
@@ -134,7 +141,7 @@ def run(args: argparse.Namespace) -> int:
     """
     repo = Path(args.repo).resolve()
     if not repo.is_dir():
-        logger.error("not a directory: %s", repo)
+        logger.error("scan root is not a directory: %s", repo)
         return 2
 
     config_path: Path | None
@@ -179,12 +186,12 @@ def run(args: argparse.Namespace) -> int:
         logger.error("%s", exc)
         return 2
 
-    source: Source = "files" if args.no_git else "git"
+    source = MODE_SOURCES[args.mode]
     try:
         result = scan_repo(repo, config, categories=categories, source=source, selection=selection)
     except NotAGitRepoError as exc:
         logger.error("%s", exc)
-        logger.error("to scan a folder that is not a git repository, add --no-git")
+        logger.error("to scan a folder that is not a git repository, use --mode dir")
         return 2
     except (GitError, ScanError, WalkError, SelectionError) as exc:
         logger.error("%s", exc)
